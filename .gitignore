@@ -1,0 +1,35 @@
+# PHPStorm Projektdateien
+.idea/
+
+# VS Code Dateien
+.vscode/
+
+# Composer
+vendor/
+composer.lock
+
+# PHPUnit
+.phpunit.result.cache
+coverage/
+phpunit.xml
+
+# Symfony spezifische Dateien
+.env
+.env.local
+.env.local.php
+.env.*.local
+
+# Cache und Logs
+var/
+*.log
+
+# Backup-Dateien
+*.bak
+*.bak-*
+*.swp
+*.swo
+
+# Betriebssystem spezifische Dateien
+.DS_Store
+Thumbs.db
+/.php-cs-fixer.cache

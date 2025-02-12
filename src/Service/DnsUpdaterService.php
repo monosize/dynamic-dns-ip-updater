@@ -1,0 +1,217 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Monosize\DynamicDnsIpUpdater\Service;
+
+use Monosize\DynamicDnsIpUpdater\Exception\DnsResolutionException;
+use Monosize\DynamicDnsIpUpdater\Exception\HtaccessUpdateException;
+use Psr\Log\LoggerInterface;
+use Symfony\Contracts\Cache\CacheInterface;
+use Symfony\Contracts\Cache\ItemInterface;
+
+/**
+ * Service responsible for updating DNS records and managing .htaccess file.
+ */
+class DnsUpdaterService
+{
+    /**
+     * @param string          $projectDir Root directory of the project
+     * @param LoggerInterface $logger     Logger for recording operations
+     * @param CacheInterface  $cache      Cache for storing IP addresses
+     */
+    public function __construct(
+        private readonly string $projectDir,
+        private readonly LoggerInterface $logger,
+        private readonly CacheInterface $cache
+    ) {
+    }
+
+    /**
+     * Updates the .htaccess file with IP addresses from all configured domains.
+     *
+     * @param bool $force If true, bypasses cache and forces update
+     *
+     * @throws DnsResolutionException  When DNS resolution fails
+     * @throws HtaccessUpdateException When .htaccess update fails
+     *
+     * @return array<string, array<string>> Map of domains to their resolved IPs
+     */
+    public function updateIpAddresses(bool $force = false): array
+    {
+        $domains = $this->getDomains();
+        if (empty($domains)) {
+            throw new \RuntimeException('No domains configured. Please set DNS_DOMAINS in your .env file.');
+        }
+
+        $updatedIps = [];
+        $allNewIps = [];
+
+        // Resolve IPs for all domains
+        foreach ($domains as $domain) {
+            $domain = trim($domain);
+            if (empty($domain)) {
+                continue;
+            }
+
+            $cacheKey = 'dynamic_dns_ips_'.md5($domain);
+            $newIps = $this->resolveIps($domain);
+            $updatedIps[$domain] = $newIps;
+
+            // Check cache if not forced
+            if (!$force) {
+                $cachedIps = $this->cache->get($cacheKey, function (ItemInterface $item) use ($newIps) {
+                    $item->expiresAfter(86400);
+
+                    return $newIps;
+                });
+
+                // Skip if IPs haven't changed
+                if ($this->areIpsEqual($cachedIps, $newIps)) {
+                    $this->logger->info("No IP changes for domain: $domain");
+                    continue;
+                }
+            }
+
+            // Update cache
+            $this->cache->delete($cacheKey);
+            $this->cache->get($cacheKey, function (ItemInterface $item) use ($newIps) {
+                $item->expiresAfter(86400);
+
+                return $newIps;
+            });
+
+            $allNewIps = array_merge($allNewIps, $newIps);
+        }
+
+        // Update .htaccess if we have any changes
+        if (!empty($allNewIps)) {
+            $this->updateHtaccess($allNewIps);
+        }
+
+        return $updatedIps;
+    }
+
+    /**
+     * Retrieves configured domains from environment variable.
+     *
+     * @return array<string> List of configured domains
+     */
+    private function getDomains(): array
+    {
+        $domainsStr = $_ENV['DNS_DOMAINS'] ?? '';
+
+        return array_filter(explode(',', $domainsStr));
+    }
+
+    /**
+     * Resolves both IPv4 and IPv6 addresses for a given domain.
+     *
+     * @param string $domain Domain name to resolve
+     *
+     * @throws DnsResolutionException When DNS resolution fails
+     *
+     * @return array<string> List of resolved IP addresses
+     */
+    private function resolveIps(string $domain): array
+    {
+        $ips = [];
+
+        // Resolve IPv4
+        $ipv4 = gethostbyname($domain);
+        if ($ipv4 === $domain) {
+            throw new DnsResolutionException("Could not resolve IPv4 address for $domain");
+        }
+        $ips[] = $ipv4;
+
+        // Resolve IPv6 if available
+        $dns = dns_get_record($domain, \DNS_AAAA);
+        if (false !== $dns && \is_array($dns) && !empty($dns[0]['ipv6'])) {
+            $ips[] = $dns[0]['ipv6'];
+        }
+
+        return $ips;
+    }
+
+    /**
+     * Updates the .htaccess file with the new IP addresses.
+     *
+     * @param array<string> $ips List of IP addresses to add to .htaccess
+     *
+     * @throws HtaccessUpdateException When file operations fail
+     */
+    private function updateHtaccess(array $ips): void
+    {
+        $htaccessPath = $this->projectDir.'/public/.htaccess';
+        $backupPath = null;
+
+        try {
+            if (!file_exists($htaccessPath)) {
+                throw new HtaccessUpdateException(".htaccess file not found at: $htaccessPath");
+            }
+
+            $htaccess = file_get_contents($htaccessPath);
+            if (false === $htaccess) {
+                throw new HtaccessUpdateException('Failed to read .htaccess file');
+            }
+
+            // Create backup
+            $backupPath = $htaccessPath.'.bak-'.date('Y-m-d-His');
+            if (!copy($htaccessPath, $backupPath)) {
+                throw new HtaccessUpdateException("Failed to create backup at: $backupPath");
+            }
+
+            // Create new IP block
+            $startMarker = '# START DYNAMIC DNS BLOCK';
+            $endMarker = '# END DYNAMIC DNS BLOCK';
+
+            $newBlock = "$startMarker\n";
+            foreach ($ips as $ip) {
+                $newBlock .= "            Require ip $ip\n";
+            }
+            $newBlock .= "            $endMarker";
+
+            // Update or insert block
+            if (str_contains($htaccess, $startMarker)) {
+                $pattern = "/$startMarker.*$endMarker/s";
+                $htaccess = preg_replace($pattern, $newBlock, $htaccess);
+            } else {
+                $htaccess = str_replace(
+                    '            Require env development',
+                    "$newBlock\n            Require env development",
+                    $htaccess
+                );
+            }
+
+            // Save changes
+            if (false === file_put_contents($htaccessPath, $htaccess)) {
+                throw new HtaccessUpdateException('Failed to write to .htaccess file');
+            }
+
+        } catch (\Exception $e) {
+            // Restore backup if available
+            if (null !== $backupPath && file_exists($backupPath)) {
+                if (!copy($backupPath, $htaccessPath)) {
+                    $this->logger->error('Failed to restore .htaccess backup', [
+                        'backup_path' => $backupPath,
+                        'htaccess_path' => $htaccessPath,
+                    ]);
+                } else {
+                    $this->logger->info('Successfully restored .htaccess from backup');
+                }
+            }
+            throw new HtaccessUpdateException($e->getMessage(), 0, $e);
+        }
+    }
+
+    /**
+     * Compares two arrays of IPs for equality.
+     */
+    private function areIpsEqual(array $ips1, array $ips2): bool
+    {
+        sort($ips1);
+        sort($ips2);
+
+        return $ips1 === $ips2;
+    }
+}

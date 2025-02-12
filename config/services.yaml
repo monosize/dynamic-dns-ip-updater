@@ -1,0 +1,20 @@
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+    public: false
+
+  Monosize\DynamicDnsIpUpdater\:
+    resource: '../src/'
+    exclude:
+      - '../src/DependencyInjection/'
+      - '../src/Exception/'
+
+  Monosize\DynamicDnsIpUpdater\Service\DnsUpdaterService:
+    arguments:
+      $projectDir: '%kernel.project_dir%'
+
+  Monosize\DynamicDnsIpUpdater\Command\UpdateDynamicIpCommand:
+    tags:
+      - { name: 'console.command' }
+      - { name: 'cronner.command' }
