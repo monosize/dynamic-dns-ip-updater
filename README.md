@@ -1,164 +1,228 @@
 # Dynamic DNS IP Updater for Apache
 
-This Symfony bundle automatically updates your Apache .htaccess file with IP addresses from dynamic DNS domains. It's particularly useful when you need to maintain access control based on dynamic IP addresses that change periodically.
+This Symfony bundle provides an automated solution for managing dynamic IP addresses in Apache's access control configurations. In environments where IP addresses change regularly, maintaining accurate access control becomes challenging. This bundle solves that problem by automatically synchronizing your Apache configuration with the current IP addresses of your dynamic DNS domains.
 
-## Features
+## Understanding Dynamic DNS and Access Control
 
-The bundle provides several key features to make dynamic IP management easier:
+Dynamic DNS (DDNS) is a method of automatically updating DNS records in real-time. It's commonly used when your IP address might change periodically, such as with residential internet connections or cloud services that don't provide static IPs. While DDNS ensures your domain always points to the correct IP, maintaining access control based on these IPs requires additional automation.
 
-- Monitors multiple dynamic DNS domains simultaneously
-- Supports both IPv4 and IPv6 addresses
-- Automatically updates .htaccess when IP addresses change
-- Creates automatic backups before modifications
-- Provides automatic rollback in case of errors
-- Implements caching to prevent unnecessary updates
-- Offers detailed logging of all operations
+This bundle bridges that gap by monitoring your dynamic DNS domains and automatically updating your Apache configuration whenever IP changes are detected. It supports both IPv4 and IPv6, providing comprehensive coverage for modern network environments.
 
-## Requirements
+## Core Features
 
-Your environment needs to meet these requirements:
+The bundle has been designed with reliability and efficiency in mind:
+
+Monitoring and Updates:
+- Tracks multiple dynamic DNS domains simultaneously
+- Supports both IPv4 and IPv6 address resolution
+- Implements intelligent caching to minimize unnecessary DNS queries
+- Provides automatic updates when IP changes are detected
+
+Safety and Reliability:
+- Creates automatic backups before any modifications
+- Implements automatic rollback on failure
+- Provides comprehensive logging for all operations
+- Maintains atomic operations to prevent configuration corruption
+
+Integration:
+- Seamlessly integrates with Symfony's ecosystem
+- Works with Apache's .htaccess configuration
+- Supports both manual and automated operation
+- Provides command-line interface for easy management
+
+## System Requirements
+
+Before installation, ensure your environment meets these prerequisites:
 
 - PHP 8.1 or higher
+  Required for modern language features and type safety
 - Symfony 6.0 or 7.0
+  Provides the foundation for robust application architecture
 - Apache web server with .htaccess support
+  Necessary for implementing dynamic access control
 - Write permissions for the .htaccess file
-- DNS resolution capabilities for the server
+  Required for automated configuration updates
+- DNS resolution capabilities
+  Needed for resolving dynamic DNS entries
 
-## Installation
+## Installation and Setup
 
-Install the package via Composer:
-
+1. First, install the package using Composer:
 ```bash
 composer require monosize/dynamic-dns-ip-updater
 ```
 
-Register the bundle in your `config/bundles.php`:
-
+2. Register the bundle in your Symfony application. Add this line to `config/bundles.php`:
 ```php
 return [
-    // ...
+    // ... other bundles ...
     Monosize\DynamicDnsIpUpdater\DynamicDnsIpUpdaterBundle::class => ['all' => true],
 ];
 ```
 
-## Configuration
-
-1. Create or update your `.env` file with your dynamic DNS domains:
-
+3. Configure your dynamic DNS domains by creating or updating your `.env` file:
 ```env
-# Comma-separated list of domains to monitor
+# List your domains, separated by commas
+# Example: DNS_DOMAINS=office.dynamicdns.net,backup.dyndns.org
 DNS_DOMAINS=yourdomain1.example.org,yourdomain2.example.org
 ```
 
-2. Ensure your .htaccess file is writable by the web server.
+## Configuration Management
 
-3. The bundle will automatically create a section in your .htaccess file marked with:
+The bundle manages a dedicated section in your .htaccess file, marked with clear delimiters:
+
 ```apache
 # START DYNAMIC DNS BLOCK
-# ...
+# Dynamic DNS IPv4 addresses
+Require ip 203.0.113.1
+# Dynamic DNS IPv6 addresses
+Require ip 2001:db8::1
 # END DYNAMIC DNS BLOCK
 ```
 
-## Usage
+This block is automatically maintained by the bundle. The clear delimiters ensure:
+- Easy identification of managed sections
+- Safe updates without affecting other configurations
+- Clean integration with existing access controls
 
-### Command Line
+## Operation Modes
 
-You can update IP addresses manually using the console command:
+The bundle can operate in two primary modes:
+
+### Manual Operation
+
+Use the command-line interface for direct control:
 
 ```bash
-# Normal update (checks cache first)
+# Standard update - checks cache and updates only if needed
 php bin/console dns:update-dynamic-ip
 
-# Force update (bypasses cache)
+# Force update - bypasses cache and forces configuration refresh
 php bin/console dns:update-dynamic-ip --force
 ```
 
-### Automatic Updates
+### Automated Operation
 
-For automatic updates, you can use Symfony's Scheduler or a cron job.
+For continuous monitoring, you can implement automatic updates using either Symfony's Scheduler or traditional cron jobs.
 
-#### Using Symfony Scheduler
-
-Add this configuration to your scheduler:
-
+Using Symfony Scheduler (Recommended):
 ```yaml
 # config/packages/scheduler.yaml
 scheduler:
     dns_update:
         type: cron
-        schedule: '*/5 * * * *'  # Every 5 minutes
+        schedule: '*/5 * * * *'  # Updates every 5 minutes
         command: 'dns:update-dynamic-ip'
 ```
 
-#### Using Crontab
-
-Add this line to your crontab:
-
+Using Traditional Crontab:
 ```bash
+# Updates every 5 minutes
 */5 * * * * /usr/bin/php /path/to/your/project/bin/console dns:update-dynamic-ip
 ```
 
-## How It Works
+## Understanding the Update Process
 
-The bundle follows this process for each update:
+Each update cycle follows a carefully designed process to ensure reliability:
 
-1. Reads the configured domains from DNS_DOMAINS environment variable
-2. Resolves current IPv4 and IPv6 addresses for each domain
-3. Compares new IPs with cached values to detect changes
-4. Creates a backup of the current .htaccess file
-5. Updates the .htaccess file with new IP addresses if changes are detected
-6. Automatically restores from backup if any errors occur
-7. Updates the cache with new IP addresses
+1. Domain Resolution:
+    - Reads configured domains from environment
+    - Resolves current IPv4 and IPv6 addresses
+    - Validates resolution results
 
-## Logging
+2. Change Detection:
+    - Compares new IPs with cached values
+    - Determines if updates are necessary
+    - Optimizes performance by avoiding unnecessary writes
 
-All operations are logged using Symfony's logging system. You can find logs about:
-- IP address changes
-- .htaccess updates
+3. Safe Updates:
+    - Creates timestamped backup of current configuration
+    - Validates backup creation
+    - Implements update using atomic operations
+
+4. Error Handling:
+    - Detects any problems during update
+    - Automatically restores from backup if needed
+    - Logs detailed error information
+
+5. Cache Management:
+    - Updates cache with new IP addresses
+    - Sets appropriate cache expiration
+    - Maintains cache consistency
+
+## Monitoring and Logging
+
+The bundle integrates with Symfony's logging system to provide comprehensive operational insights:
+
+Configuration Changes:
+- IP address updates
 - Backup operations
-- Error conditions
-- Cache operations
+- Configuration modifications
 
-Check your Symfony logs (typically in `var/log/`) for detailed information.
+Error Conditions:
+- DNS resolution failures
+- File operation issues
+- Permission problems
 
-## Development
+Performance Metrics:
+- Cache hits and misses
+- Update timing
+- Resource usage
 
-### Running Tests
+Logs are written to your Symfony application's log directory (`var/log/`), following the standard Symfony logging conventions.
 
+## Development and Testing
+
+The bundle includes a comprehensive test suite and development tools:
+
+Running Tests:
 ```bash
-# Run all checks
+# Complete test suite with all checks
 composer check-all
 
-# Run specific checks
-composer test           # Run PHPUnit tests
-composer test-coverage  # Generate test coverage report
-composer cs-check      # Check coding standards
-composer cs-fix        # Fix coding standards
-composer phpstan       # Run static analysis
+# Individual components
+composer test           # Unit tests
+composer test-coverage  # Coverage analysis
+composer cs-check      # Code style validation
+composer cs-fix        # Automatic style fixes
+composer phpstan       # Static analysis
 ```
 
-### Code Coverage
-
-To generate code coverage reports, you need either the PCOV or Xdebug extension installed:
+Test Coverage Analysis:
+To generate detailed coverage reports, install either PCOV (recommended) or Xdebug:
 
 ```bash
-# Install PCOV (recommended)
+# Using PCOV
 pecl install pcov
 
-# Or install Xdebug
+# Or using Xdebug
 pecl install xdebug
 ```
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+We welcome contributions that improve the bundle's functionality or documentation. To contribute:
 
-Please make sure to update tests as appropriate.
+1. Fork the repository
+2. Create a feature branch
+3. Implement your changes with tests
+4. Submit a pull request
+
+For significant changes, please open an issue first to discuss your proposed changes.
+
+## Support and Troubleshooting
+
+If you encounter issues or need assistance:
+
+1. Check the logs in `var/log/` for detailed error messages
+2. Verify your DNS domains are correctly configured
+3. Ensure proper file permissions for .htaccess
+4. Open an issue on the GitHub repository with:
+    - Detailed description of the problem
+    - Relevant log entries
+    - Your configuration (without sensitive data)
+    - Steps to reproduce the issue
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-If you encounter any problems or have questions, please open an issue on the GitHub repository.
+This project is licensed under the MIT License, promoting open collaboration and reuse. See the LICENSE file for complete terms.
