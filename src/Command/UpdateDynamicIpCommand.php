@@ -24,11 +24,11 @@ class UpdateDynamicIpCommand extends Command
 {
     /**
      * @param DnsUpdaterService $dnsUpdater Service to handle DNS updates
-     * @param string       $name       Optional command name override
+     * @param string            $name       Optional command name override
      */
     public function __construct(
         private readonly DnsUpdaterService $dnsUpdater,
-        string $name = null
+        ?string $name = null
     ) {
         parent::__construct($name);
     }

@@ -36,6 +36,7 @@ class DnsUpdaterService
      * Parses a domain string that may include IP version preference.
      *
      * @param string $domainString Domain string in format "domain.com[:ip4|:ip6]"
+     *
      * @return array{domain: string, ipVersion: string} Parsed domain and IP version
      */
     private function parseDomainString(string $domainString): array
@@ -45,13 +46,13 @@ class DnsUpdaterService
         $ipVersion = $parts[1] ?? self::IP_VERSION_BOTH;
 
         // Validate IP version specification
-        if (!in_array($ipVersion, [self::IP_VERSION_BOTH, self::IP_VERSION_V4, self::IP_VERSION_V6])) {
+        if (!\in_array($ipVersion, [self::IP_VERSION_BOTH, self::IP_VERSION_V4, self::IP_VERSION_V6], true)) {
             $ipVersion = self::IP_VERSION_BOTH;
         }
 
         return [
             'domain' => $domain,
-            'ipVersion' => $ipVersion
+            'ipVersion' => $ipVersion,
         ];
     }
 
@@ -65,18 +66,17 @@ class DnsUpdaterService
         $domainsStr = $_ENV['DNS_DOMAINS'] ?? '';
         $domainStrings = array_filter(explode(',', $domainsStr));
 
-        return array_map(
-            fn(string $domainString) => $this->parseDomainString($domainString),
-            $domainStrings
-        );
+        return array_map(fn (string $domainString) => $this->parseDomainString($domainString), $domainStrings);
     }
 
     /**
      * Resolves IP addresses for a given domain based on IP version preference.
      *
-     * @param string $domain Domain name to resolve
+     * @param string $domain    Domain name to resolve
      * @param string $ipVersion Desired IP version (ip4, ip6, or both)
+     *
      * @throws DnsResolutionException When DNS resolution fails
+     *
      * @return array<string> List of resolved IP addresses
      */
     private function resolveIps(string $domain, string $ipVersion): array
@@ -84,7 +84,7 @@ class DnsUpdaterService
         $ips = [];
 
         // Resolve IPv4 if requested
-        if (in_array($ipVersion, [self::IP_VERSION_BOTH, self::IP_VERSION_V4])) {
+        if (\in_array($ipVersion, [self::IP_VERSION_BOTH, self::IP_VERSION_V4], true)) {
             $ipv4 = gethostbyname($domain);
             if ($ipv4 === $domain) {
                 throw new DnsResolutionException("Could not resolve IPv4 address for $domain");
@@ -93,11 +93,11 @@ class DnsUpdaterService
         }
 
         // Resolve IPv6 if requested
-        if (in_array($ipVersion, [self::IP_VERSION_BOTH, self::IP_VERSION_V6])) {
-            $dns = dns_get_record($domain, DNS_AAAA);
-            if (false !== $dns && is_array($dns) && !empty($dns[0]['ipv6'])) {
+        if (\in_array($ipVersion, [self::IP_VERSION_BOTH, self::IP_VERSION_V6], true)) {
+            $dns = dns_get_record($domain, \DNS_AAAA);
+            if (false !== $dns && \is_array($dns) && !empty($dns[0]['ipv6'])) {
                 $ips[] = $dns[0]['ipv6'];
-            } elseif ($ipVersion === self::IP_VERSION_V6) {
+            } elseif (self::IP_VERSION_V6 === $ipVersion) {
                 throw new DnsResolutionException("Could not resolve IPv6 address for $domain");
             }
         }
@@ -109,8 +109,10 @@ class DnsUpdaterService
      * Updates the .htaccess file with IP addresses from all configured domains.
      *
      * @param bool $force If true, bypasses cache and forces update
-     * @throws DnsResolutionException When DNS resolution fails
+     *
+     * @throws DnsResolutionException  When DNS resolution fails
      * @throws HtaccessUpdateException When .htaccess update fails
+     *
      * @return array<string, array<string>> Map of domains to their resolved IPs
      */
     public function updateIpAddresses(bool $force = false): array
@@ -128,7 +130,7 @@ class DnsUpdaterService
             $domain = $domainConfig['domain'];
             $ipVersion = $domainConfig['ipVersion'];
 
-            $cacheKey = "dynamic_dns_ips_{$ipVersion}_" . md5($domain);
+            $cacheKey = "dynamic_dns_ips_{$ipVersion}_".md5($domain);
             $newIps = $this->resolveIps($domain, $ipVersion);
             $updatedIps[$domain] = $newIps;
 
@@ -136,6 +138,7 @@ class DnsUpdaterService
             if (!$force) {
                 $cachedIps = $this->cache->get($cacheKey, function (ItemInterface $item) use ($newIps) {
                     $item->expiresAfter(86400);
+
                     return $newIps;
                 });
 
@@ -150,6 +153,7 @@ class DnsUpdaterService
             $this->cache->delete($cacheKey);
             $this->cache->get($cacheKey, function (ItemInterface $item) use ($newIps) {
                 $item->expiresAfter(86400);
+
                 return $newIps;
             });
 
@@ -162,47 +166,6 @@ class DnsUpdaterService
         }
 
         return $updatedIps;
-    }
-
-    /**
-     * Retrieves configured domains from environment variable.
-     *
-     * @return array<string> List of configured domains
-     */
-    private function getDomains(): array
-    {
-        $domainsStr = $_ENV['DNS_DOMAINS'] ?? '';
-
-        return array_filter(explode(',', $domainsStr));
-    }
-
-    /**
-     * Resolves both IPv4 and IPv6 addresses for a given domain.
-     *
-     * @param string $domain Domain name to resolve
-     *
-     * @throws DnsResolutionException When DNS resolution fails
-     *
-     * @return array<string> List of resolved IP addresses
-     */
-    private function resolveIps(string $domain): array
-    {
-        $ips = [];
-
-        // Resolve IPv4
-        $ipv4 = gethostbyname($domain);
-        if ($ipv4 === $domain) {
-            throw new DnsResolutionException("Could not resolve IPv4 address for $domain");
-        }
-        $ips[] = $ipv4;
-
-        // Resolve IPv6 if available
-        $dns = dns_get_record($domain, \DNS_AAAA);
-        if (false !== $dns && \is_array($dns) && !empty($dns[0]['ipv6'])) {
-            $ips[] = $dns[0]['ipv6'];
-        }
-
-        return $ips;
     }
 
     /**
@@ -248,11 +211,7 @@ class DnsUpdaterService
                 $pattern = "/$startMarker.*$endMarker/s";
                 $htaccess = preg_replace($pattern, $newBlock, $htaccess);
             } else {
-                $htaccess = str_replace(
-                    '            Require env development',
-                    "$newBlock\n            Require env development",
-                    $htaccess
-                );
+                $htaccess = str_replace('            Require env development', "$newBlock\n            Require env development", $htaccess);
             }
 
             // Save changes
