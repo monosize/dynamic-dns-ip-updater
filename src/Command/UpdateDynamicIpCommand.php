@@ -18,16 +18,17 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 #[AsCommand(
     name: 'dns:update-dynamic-ip',
     description: 'Updates .htaccess with current IP addresses from dynamic DNS domains',
+    hidden: false  // Stellen Sie sicher, dass der Command nicht versteckt ist
 )]
 class UpdateDynamicIpCommand extends Command
 {
     /**
      * @param DnsUpdaterService $dnsUpdater Service to handle DNS updates
-     * @param null|string       $name       Optional command name override
+     * @param string       $name       Optional command name override
      */
     public function __construct(
         private readonly DnsUpdaterService $dnsUpdater,
-        ?string $name = null
+        string $name = null
     ) {
         parent::__construct($name);
     }
@@ -41,9 +42,10 @@ class UpdateDynamicIpCommand extends Command
             ->addOption(
                 'force',
                 'f',
-                InputOption::VALUE_NONE, // VALUE_NONE always returns boolean
+                InputOption::VALUE_NONE,
                 'Force update without checking cache'
-            );
+            )
+            ->setHelp('This command updates your .htaccess file with the current IP addresses from your configured dynamic DNS domains.');
     }
 
     /**

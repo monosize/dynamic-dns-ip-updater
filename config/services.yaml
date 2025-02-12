@@ -4,17 +4,16 @@ services:
     autoconfigure: true
     public: false
 
-  Monosize\DynamicDnsIpUpdater\:
-    resource: '../src/'
-    exclude:
-      - '../src/DependencyInjection/'
-      - '../src/Exception/'
+  # Explizit den Command-Namespace registrieren
+  Monosize\DynamicDnsIpUpdater\Command\:
+    resource: '../src/Command'
+    tags: ['console.command']
 
+  # Den Service-Namespace registrieren
+  Monosize\DynamicDnsIpUpdater\Service\:
+    resource: '../src/Service'
+
+  # Den DnsUpdaterService explizit konfigurieren
   Monosize\DynamicDnsIpUpdater\Service\DnsUpdaterService:
     arguments:
       $projectDir: '%kernel.project_dir%'
-
-  Monosize\DynamicDnsIpUpdater\Command\UpdateDynamicIpCommand:
-    tags:
-      - { name: 'console.command' }
-      - { name: 'cronner.command' }
