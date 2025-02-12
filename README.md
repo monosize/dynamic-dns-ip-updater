@@ -14,7 +14,7 @@ The bundle has been designed with reliability and efficiency in mind:
 
 Monitoring and Updates:
 - Tracks multiple dynamic DNS domains simultaneously
-- Supports both IPv4 and IPv6 address resolution
+- Supports both IPv4 and IPv6 address resolution with per-domain IP version control
 - Implements intelligent caching to minimize unnecessary DNS queries
 - Provides automatic updates when IP changes are detected
 
@@ -62,21 +62,52 @@ return [
 
 3. Configure your dynamic DNS domains by creating or updating your `.env` file:
 ```env
-# List your domains, separated by commas
-# Example: DNS_DOMAINS=office.dynamicdns.net,backup.dyndns.org
-DNS_DOMAINS=yourdomain1.example.org,yourdomain2.example.org
+# List your domains with optional IP version preferences
+# Format: domain[:ip4|:ip6], separated by commas
+# Examples:
+# - domain.com (both IPv4 and IPv6)
+# - domain.com:ip4 (IPv4 only)
+# - domain.com:ip6 (IPv6 only)
+DNS_DOMAINS=office.dynamicdns.net:ip4,backup.dyndns.org:ip6,both.example.org
 ```
+
+## Domain Configuration Options
+
+When configuring domains in DNS_DOMAINS, you have three options for IP version control:
+
+1. Both IP Versions (default):
+   ```
+   domain.com
+   ```
+   The bundle will resolve and use both IPv4 and IPv6 addresses if available.
+
+2. IPv4 Only:
+   ```
+   domain.com:ip4
+   ```
+   Only IPv4 addresses will be resolved and added to the configuration.
+
+3. IPv6 Only:
+   ```
+   domain.com:ip6
+   ```
+   Only IPv6 addresses will be resolved and added to the configuration.
+
+This granular control allows you to optimize your access control configuration based on your specific needs for each domain.
 
 ## Configuration Management
 
-The bundle manages a dedicated section in your .htaccess file, marked with clear delimiters:
+The bundle manages a dedicated section in your .htaccess file, marked with clear delimiters. The content reflects your IP version preferences:
 
 ```apache
 # START DYNAMIC DNS BLOCK
-# Dynamic DNS IPv4 addresses
+# IPv4-only domain
 Require ip 203.0.113.1
-# Dynamic DNS IPv6 addresses
+# IPv6-only domain
 Require ip 2001:db8::1
+# Dual-stack domain
+Require ip 203.0.113.2
+Require ip 2001:db8::2
 # END DYNAMIC DNS BLOCK
 ```
 

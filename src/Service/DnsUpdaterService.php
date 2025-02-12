@@ -15,6 +15,11 @@ use Symfony\Contracts\Cache\ItemInterface;
  */
 class DnsUpdaterService
 {
+    // IP version constants for better code readability
+    private const IP_VERSION_BOTH = 'both';
+    private const IP_VERSION_V4 = 'ip4';
+    private const IP_VERSION_V6 = 'ip6';
+
     /**
      * @param string          $projectDir Root directory of the project
      * @param LoggerInterface $logger     Logger for recording operations
@@ -28,13 +33,84 @@ class DnsUpdaterService
     }
 
     /**
+     * Parses a domain string that may include IP version preference.
+     *
+     * @param string $domainString Domain string in format "domain.com[:ip4|:ip6]"
+     * @return array{domain: string, ipVersion: string} Parsed domain and IP version
+     */
+    private function parseDomainString(string $domainString): array
+    {
+        $parts = explode(':', trim($domainString));
+        $domain = $parts[0];
+        $ipVersion = $parts[1] ?? self::IP_VERSION_BOTH;
+
+        // Validate IP version specification
+        if (!in_array($ipVersion, [self::IP_VERSION_BOTH, self::IP_VERSION_V4, self::IP_VERSION_V6])) {
+            $ipVersion = self::IP_VERSION_BOTH;
+        }
+
+        return [
+            'domain' => $domain,
+            'ipVersion' => $ipVersion
+        ];
+    }
+
+    /**
+     * Retrieves configured domains from environment variable.
+     *
+     * @return array<array{domain: string, ipVersion: string}> List of configured domains with IP preferences
+     */
+    private function getDomains(): array
+    {
+        $domainsStr = $_ENV['DNS_DOMAINS'] ?? '';
+        $domainStrings = array_filter(explode(',', $domainsStr));
+
+        return array_map(
+            fn(string $domainString) => $this->parseDomainString($domainString),
+            $domainStrings
+        );
+    }
+
+    /**
+     * Resolves IP addresses for a given domain based on IP version preference.
+     *
+     * @param string $domain Domain name to resolve
+     * @param string $ipVersion Desired IP version (ip4, ip6, or both)
+     * @throws DnsResolutionException When DNS resolution fails
+     * @return array<string> List of resolved IP addresses
+     */
+    private function resolveIps(string $domain, string $ipVersion): array
+    {
+        $ips = [];
+
+        // Resolve IPv4 if requested
+        if (in_array($ipVersion, [self::IP_VERSION_BOTH, self::IP_VERSION_V4])) {
+            $ipv4 = gethostbyname($domain);
+            if ($ipv4 === $domain) {
+                throw new DnsResolutionException("Could not resolve IPv4 address for $domain");
+            }
+            $ips[] = $ipv4;
+        }
+
+        // Resolve IPv6 if requested
+        if (in_array($ipVersion, [self::IP_VERSION_BOTH, self::IP_VERSION_V6])) {
+            $dns = dns_get_record($domain, DNS_AAAA);
+            if (false !== $dns && is_array($dns) && !empty($dns[0]['ipv6'])) {
+                $ips[] = $dns[0]['ipv6'];
+            } elseif ($ipVersion === self::IP_VERSION_V6) {
+                throw new DnsResolutionException("Could not resolve IPv6 address for $domain");
+            }
+        }
+
+        return $ips;
+    }
+
+    /**
      * Updates the .htaccess file with IP addresses from all configured domains.
      *
      * @param bool $force If true, bypasses cache and forces update
-     *
-     * @throws DnsResolutionException  When DNS resolution fails
+     * @throws DnsResolutionException When DNS resolution fails
      * @throws HtaccessUpdateException When .htaccess update fails
-     *
      * @return array<string, array<string>> Map of domains to their resolved IPs
      */
     public function updateIpAddresses(bool $force = false): array
@@ -48,21 +124,18 @@ class DnsUpdaterService
         $allNewIps = [];
 
         // Resolve IPs for all domains
-        foreach ($domains as $domain) {
-            $domain = trim($domain);
-            if (empty($domain)) {
-                continue;
-            }
+        foreach ($domains as $domainConfig) {
+            $domain = $domainConfig['domain'];
+            $ipVersion = $domainConfig['ipVersion'];
 
-            $cacheKey = 'dynamic_dns_ips_'.md5($domain);
-            $newIps = $this->resolveIps($domain);
+            $cacheKey = "dynamic_dns_ips_{$ipVersion}_" . md5($domain);
+            $newIps = $this->resolveIps($domain, $ipVersion);
             $updatedIps[$domain] = $newIps;
 
             // Check cache if not forced
             if (!$force) {
                 $cachedIps = $this->cache->get($cacheKey, function (ItemInterface $item) use ($newIps) {
                     $item->expiresAfter(86400);
-
                     return $newIps;
                 });
 
@@ -77,7 +150,6 @@ class DnsUpdaterService
             $this->cache->delete($cacheKey);
             $this->cache->get($cacheKey, function (ItemInterface $item) use ($newIps) {
                 $item->expiresAfter(86400);
-
                 return $newIps;
             });
 
