@@ -20,20 +20,19 @@ class DynamicDnsIpUpdaterExtension extends Extension
      * @param array            $configs   Configuration array from config files
      * @param ContainerBuilder $container The service container
      *
-     * @throws \RuntimeException If DNS_DOMAINS environment variable is not set
      */
     public function load(array $configs, ContainerBuilder $container): void
     {
+        // Skip registration if DNS_DOMAINS is not configured
+        if (!isset($_ENV['DNS_DOMAINS'])) {
+            return;
+        }
+
         // Load services configuration from YAML file
         $loader = new YamlFileLoader(
             $container,
             new FileLocator(__DIR__.'/../../config')
         );
         $loader->load('services.yaml');
-
-        // Ensure DNS_DOMAINS environment variable is available
-        if (!isset($_ENV['DNS_DOMAINS'])) {
-            throw new \RuntimeException('The DNS_DOMAINS environment variable is not set. Please configure it in your .env file.');
-        }
     }
 }
