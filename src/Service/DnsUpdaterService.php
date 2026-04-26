@@ -87,7 +87,12 @@ class DnsUpdaterService
         if (\in_array($ipVersion, [self::IP_VERSION_BOTH, self::IP_VERSION_V4], true)) {
             $ipv4 = gethostbyname($domain);
             if ($ipv4 === $domain) {
-                throw new DnsResolutionException("Could not resolve IPv4 address for $domain");
+                // No A record — fall back to external HTTP service
+                $ipv4 = $this->fetchExternalIpV4();
+                if (null === $ipv4) {
+                    throw new DnsResolutionException("Could not resolve IPv4 address for $domain");
+                }
+                $this->logger->info("No A record for $domain, using external IPv4: $ipv4");
             }
             $ips[] = $ipv4;
         }
@@ -103,6 +108,25 @@ class DnsUpdaterService
         }
 
         return $ips;
+    }
+
+    /**
+     * Fetches the current public IPv4 address from an external HTTP service.
+     * Override in tests to avoid real HTTP calls.
+     */
+    protected function fetchExternalIpV4(): ?string
+    {
+        $serviceUrl = $_ENV['EXTERNAL_IPV4_SERVICE'] ?? 'https://api4.ipify.org';
+        $ip = @file_get_contents($serviceUrl);
+        if (false === $ip) {
+            return null;
+        }
+        $ip = trim($ip);
+        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return null;
+        }
+
+        return $ip;
     }
 
     /**
